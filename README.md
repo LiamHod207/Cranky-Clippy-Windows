@@ -1,6 +1,6 @@
 # cranky-clippy
 
-This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. He runs on desktop Linux and on Windows. It's borked on MacOS. todo...?
+This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows, If you want the Linux version, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
 
 ![Happy Clippy](assets/2.%20happy/h-frame1.png)
 

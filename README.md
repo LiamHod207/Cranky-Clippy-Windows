@@ -1,6 +1,10 @@
 # cranky-clippy
 
-This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows, If you want the Linux version, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
+This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows.
+
+If you want the Linux version, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
+
+Currently doesn't work on MacOS, we're working on it...
 
 ![Happy Clippy](assets/2.%20happy/h-frame1.png)
 

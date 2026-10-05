@@ -1,8 +1,8 @@
 # cranky-clippy
 
-This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows.
+This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows. We originally made this in 24 hours for Stormhacks 2026, and this is the more full version with everything we didn't have time to add.
 
-If you want the Linux version, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
+If you want the Linux-only version made during the hackathon, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
 
 Currently doesn't work on MacOS, we're working on it...
 

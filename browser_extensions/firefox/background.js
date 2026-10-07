@@ -54,7 +54,7 @@ function attachPort(port) {
     } else if (message.action === "restore") {
       restoreTab(message.target);
     } else if (message.action === "query_active_tab") {
-      queryActiveTab();
+      queryActiveTab(message.request_id);
     } else if (message.action === "shutdown") {
       const closing = nativePort;
       nativePort = null;
@@ -163,8 +163,9 @@ function domainOf(url) {
 //
 // The windows.* API is deliberately avoided: Chrome's extension API does not
 // expose window titles, and lastFocusedWindow does the same job through tabs.
-async function queryActiveTab() {
+async function queryActiveTab(requestId) {
   const reply = payload => {
+    payload.request_id = requestId;
     nativePort?.postMessage(payload);
     return payload;
   };

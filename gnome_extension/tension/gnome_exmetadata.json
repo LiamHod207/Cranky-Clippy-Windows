@@ -1,7 +1,0 @@
-{
-  "uuid": "focus@cranky-clippy.local",
-  "name": "Cranky Clippy Focus",
-  "description": "Read-only focused window identity for Cranky Clippy on GNOME.",
-  "shell-version": ["45", "46", "47", "48", "49", "50"],
-  "version": 1
-}

@@ -7,7 +7,7 @@ returned dict to Jev as the `state`.
 Static app and website definitions live in app_catalog.py; this module owns
 live desktop detection and metadata collection.
 
-Linux: KDE uses KWin; GNOME uses the Focused Window D-Bus Shell extension.
+Linux: KDE uses KWin; GNOME uses the bundled Cranky Clippy Focus Shell extension.
 X11 desktops use EWMH via xprop when compositor DBus is unavailable. AT-SPI is
 only a best-effort fallback (accessibility flags can be absent or stale). Window-focus duration is tracked
 between polls; system idle time is read from the desktop API where available
@@ -2388,7 +2388,7 @@ def get_desktop_state(user_goal=None):
         "focus_lost": False,
         "detection_status": "ok" if raw_app_name else "unavailable",
         "detection_hint": None if raw_app_name else (
-            "GNOME Wayland needs the Focused Window D-Bus extension enabled; "
+            "GNOME Wayland: run python3 gnome_extension/install.py and enable Cranky Clippy Focus; "
             "X11 needs xprop; AT-SPI needs gi/Atspi and app accessibility enabled."
             if not IS_WINDOWS else "Win32 could not read the foreground identity."
         ),

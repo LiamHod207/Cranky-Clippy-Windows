@@ -1,6 +1,6 @@
 # cranky-clippy
 
-This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This repo only runs on Windows. We originally made this in 24 hours for Stormhacks 2026, and this is the more full version with everything we didn't have time to add.
+This is Cranky Clippy. He's happy for now, but he won't be for much longer if you get distracted. This continuation repo targets Linux and Windows. We originally made this in 24 hours for Stormhacks 2026, and this is the more full version with everything we didn't have time to add.
 
 If you want the Linux-only version made during the hackathon, use this link: [Cranky-Clippy](https://github.com/neaflow/cranky-clippy)
 
@@ -32,12 +32,12 @@ can change what the other does.
 
 | | Linux | Windows |
 |---|---|---|
-| focused window | KWin over DBus, else AT-SPI | Win32 (`GetForegroundWindow` + the owning process' image name) |
+| focused window | KWin / GNOME Shell extension / X11 EWMH, then best-effort AT-SPI | Win32 (`GetForegroundWindow` + the owning process' image name) |
 | idle time | Mutter / freedesktop ScreenSaver / X11 / Wayland idle protocol | `GetLastInputInfo` |
 | app metadata | `.desktop` entries + AppStream | the executable's version resource (FileDescription/ProductName) |
 | restore/minimize a window | KWin scripting | `ShowWindow` + `SetForegroundWindow` |
 | reopen a closed app | `gtk-launch` desktop entry | the executable path recorded for that window, else the app's own exe |
-| browser tab | sessionstore (Gecko) / History DB (Chromium) / extension | extension first, then History DB |
+| browser tab | live extension first, then caption-matched sessionstore/History | extension first, then History DB |
 | pet compositing | X11/XWayland tolerates a damage rect overhanging the window | the artwork is shifted *inside* the window, because `UpdateLayeredWindow` rejects an overhang |
 
 ## How to set it up
@@ -49,13 +49,62 @@ can change what the other does.
 ```sh
 sudo apt update
 sudo apt install python3 xwayland python3-venv python3-tk python3-gi python3-dbus \
-  gir1.2-atspi-2.0 at-spi2-core
+  gir1.2-atspi-2.0 at-spi2-core x11-utils libglib2.0-bin
 ```
 
 **Windows** — nothing to install. `tkinter` ships with the Windows Python
 installer, and the pet comes from `pip install PySide6` below. Qt's own
 `UpdateLayeredWindow` composites the pet, so there is no extra desktop
 integration to install.
+
+### GNOME focus detection (especially Wayland)
+
+GNOME does not expose global native Wayland focus through X11. Install and enable
+[Focused Window D-Bus](https://extensions.gnome.org/extension/5592/focused-window-d-bus/)
+using the version offered for your GNOME Shell. Source and interface:
+<https://github.com/flexagoon/focused-window-dbus>. This third-party extension
+exposes focused window identity on your local session bus; other local apps can
+also query it. It is not bundled or installed automatically by Clippy.
+
+Check it before launching:
+
+```sh
+gdbus call --session --dest org.gnome.Shell \
+  --object-path /org/gnome/shell/extensions/FocusedWindow \
+  --method org.gnome.shell.extensions.FocusedWindow.Get
+python3 get_desktop_state.py
+```
+
+Do not turn on Shell unsafe mode. Without the extension, AT-SPI is best effort,
+not guaranteed: install the distro accessibility packages, keep system packages
+visible in the venv, and enable accessibility in the application. On X11, xprop
+provides focus without the extension. XWayland is deliberately not used as a
+Wayland focus source, because it can report the last X11 app while a native
+Wayland app is actually focused. A missing focus source now includes
+`detection_status: unavailable` and a setup hint.
+
+For reliable browser URLs on either OS, install the browser extension/native
+host described below. The live extension is used on Linux too. Reload it after updating this branch
+(the request/reply protocol now includes a poll ID). Without it,
+caption-matched profile files and address-bar accessibility are best effort;
+unmatched history/session tabs are no longer reported as the active URL.
+Two tabs with identical titles cannot be distinguished by disk/title matching.
+Unsupported or sandboxed apps can still omit metadata. Window actions on GNOME
+are not added by this detection change.
+
+### Compatibility checks
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+The regression tests use simulated GNOME, X11, KWin and Win32 replies. They are
+not substitutes for running on those desktops. Before merging, test at least:
+GNOME Wayland with the extension, GNOME X11, KDE and Windows. Switch between a
+native editor and browser, switch tabs/windows (including matching titles),
+focus Clippy, and check `python3 get_desktop_state.py` plus the running UI.
+The standalone detector has no running browser bridge; URL detection there
+uses only accessibility/profile fallbacks. Check live extension URLs in the UI.
 
 ### 2. Create a virtual environment and install PySide6
 

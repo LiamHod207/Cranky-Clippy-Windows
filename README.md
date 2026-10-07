@@ -50,6 +50,7 @@ can change what the other does.
 sudo apt update
 sudo apt install python3 xwayland python3-venv python3-tk python3-gi python3-dbus \
   gir1.2-atspi-2.0 at-spi2-core x11-utils libglib2.0-bin
+python3 gnome_extension/install.py
 ```
 
 **Windows** — nothing to install. `tkinter` ships with the Windows Python
@@ -61,7 +62,10 @@ integration to install.
 
 GNOME does not expose global native Wayland focus through X11. This repo bundles
 its own small read-only Shell extension for GNOME 45-50, with no third-party
-download, pip dependency, root privileges or unsafe Shell mode. Install once:
+download, pip dependency, root privileges or unsafe Shell mode. The universal
+Linux setup above runs this installer on every desktop. It detects the active
+GNOME session and does nothing on KDE/other desktops, even if GNOME is installed.
+You can also rerun it:
 
 ```sh
 python3 gnome_extension/install.py
@@ -118,6 +122,7 @@ are not added by this detection change.
 
 ```sh
 python3 -m unittest discover -s tests -v
+node tests/test_gnome_extension.js  # optional offline JS mock checks
 ```
 
 The regression tests use simulated GNOME, X11, KWin and Win32 replies. They are

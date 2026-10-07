@@ -199,15 +199,11 @@ class GoalOverlay:
         self._browser_bridge = BrowserExtensionBridge()
         self._browser_bridge.on_message = self._on_browser_bridge_message
         self._browser_restore_acks = queue.Queue()
-        if IS_WINDOWS:
-            # Windows cannot read a Chromium tab off disk, so the detector
-            # asks the installed extension for the focused tab instead.
-            get_desktop_state.set_active_tab_query(
-                self._browser_bridge.request_active_tab
-            )
-            # This widget and Clippy are ordinary windows here, so make sure
-            # the detector never reports one of them as the focused app.
-            get_desktop_state.set_ignored_window_titles([OVERLAY_TITLE])
+        # All platforms benefit from live tabs instead of delayed disk files.
+        get_desktop_state.set_active_tab_query(
+            lambda app_key: self._browser_bridge.request_active_tab(_bridge_channel(app_key))
+        )
+        get_desktop_state.set_ignored_window_titles([OVERLAY_TITLE])
         self._ignore_next_on_task = threading.Event()
         self._excused_target_signature = None
         self._excuse_pending = False

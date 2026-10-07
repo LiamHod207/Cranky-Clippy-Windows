@@ -8,6 +8,7 @@ import socketserver
 import sys
 import threading
 import time
+import uuid
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -197,13 +198,19 @@ class BrowserExtensionBridge:
             # Nothing installed/started for this browser: do not spend the
             # timeout waiting every four seconds.
             return None
-        if not self.send(browser, {"action": "query_active_tab"}):
+        # Drop late replies from earlier polls before asking for a snapshot.
+        with self.lock:
+            self.tab_replies[browser].clear()
+        request_id = uuid.uuid4().hex
+        if not self.send(browser, {"action": "query_active_tab", "request_id": request_id}):
             return None
         deadline = time.monotonic() + timeout
         while True:
             with self.lock:
-                if self.tab_replies[browser]:
-                    return self.tab_replies[browser].popleft()
+                while self.tab_replies[browser]:
+                    reply = self.tab_replies[browser].popleft()
+                    if reply.get("request_id") == request_id:
+                        return reply
                 still_connected = self.connections.get(browser) is not None
             if not still_connected or time.monotonic() >= deadline:
                 return None

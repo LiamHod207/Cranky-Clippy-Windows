@@ -7,9 +7,9 @@ returned dict to Jev as the `state`.
 Static app and website definitions live in app_catalog.py; this module owns
 live desktop detection and metadata collection.
 
-Linux: on KDE the focused window comes from KWin itself over DBus (definitive,
-unlike the accessibility tree, whose ACTIVE flags go stale). Everywhere else it
-falls back to the AT-SPI accessibility tree. Window-focus duration is tracked
+Linux: KDE uses KWin; GNOME uses the bundled Cranky Clippy Focus Shell extension.
+X11 desktops use EWMH via xprop when compositor DBus is unavailable. AT-SPI is
+only a best-effort fallback (accessibility flags can be absent or stale). Window-focus duration is tracked
 between polls; system idle time is read from the desktop API where available
 and remains None where the compositor does not expose it (notably some KDE
 Wayland versions).
@@ -26,6 +26,8 @@ On Linux only python3-gi and python3-dbus are needed from the repos (both
 preinstalled on Ubuntu with KDE/GNOME). On Windows everything used here ships
 with Python.
 """
+
+from desktop_focus import gnome_focus, x11_focus
 
 import configparser
 import functools
@@ -1512,7 +1514,8 @@ def _find_app_frame(app_key, caption):
                 caption_match = frame
     if caption_match is not None:
         return caption_match
-    return fallback
+    # Never read an address bar from a different browser window.
+    return None if caption else fallback
 
 
 def _walk(node, max_depth=12, max_nodes=1500):
@@ -1650,7 +1653,7 @@ def _firefox_focus(window_title, browser_key="firefox"):
                 fallback = cand
             if _title_matches(needle, title):
                 return cand
-    return fallback
+    return None  # do not label an unmatched background tab as active
 
 
 def _firefox_other_domains(window, exclude_idx, limit=8):
@@ -1681,7 +1684,9 @@ def _read_browser_url(frame):
             continue
         name = (node.get_name() or "").lower()
         text = _node_text(node)
-        if text and url_re.match(text.strip()):
+        # Page text may contain URLs too; only address-bar controls count.
+        is_address = any(hint in name for hint in ("address", "url", "location", "search or enter"))
+        if is_address and text and url_re.match(text.strip()):
             return text.strip()
         if not text and ("address" in name or "url" in name or "enter" in name):
             # the url-bar entry exists but its text came back empty
@@ -1787,8 +1792,7 @@ def _chromium_history_url(app_key, window_title):
         for url, title, _t in rows:
             if _title_matches(needle, title):
                 return url, title
-    url, title, _t = rows[0]
-    return url, title
+    return None  # latest visit is not necessarily the active tab
 
 
 def _chromium_recent_domains(app_key, needle, limit=8):
@@ -1820,7 +1824,7 @@ def _domain_from_url(url):
 
 # Optional hook: jev_overlay registers the browser-extension bridge here so the
 # focused tab can be read on Windows, where no profile file exposes it. Linux
-# never calls it - there the tab comes from the sessionstore/History readers.
+# uses the same live bridge before the sessionstore/History readers.
 _ACTIVE_TAB_QUERY = None
 _IGNORED_WINDOW_TITLES = set()
 
@@ -1870,12 +1874,12 @@ def _live_browser_tab(app_key, window_title):
     if not isinstance(live, dict) or not live.get("url"):
         return None
     live_title = (live.get("window_title") or live.get("title") or "").strip()
-    if window_title and live_title:
-        caption = window_title.strip()
-        if live_title.casefold() != caption.casefold() and (
-            live_title.casefold() not in caption.casefold()
-        ):
-            return None
+    if not window_title or not live_title:
+        return None
+    caption = window_title.strip().casefold()
+    tab_caption = (_tab_title_from_window(window_title) or "").casefold()
+    if live_title.casefold() not in (caption, tab_caption):
+        return None
     return live
 
 
@@ -1891,14 +1895,12 @@ def _collect_browser_metadata(app_key, window_title, frame):
     tab_title = None
     history = None
 
-    if IS_WINDOWS:
-        # The extension knows the real focused tab; prefer it over the files
-        # below, which on Windows are either locked or written late.
-        live = _live_browser_tab(app_key, window_title)
-        if live:
-            url = live.get("url") or None
-            tab_title = live.get("title") or None
-            history = live.get("other_domains") or None
+    # Prefer the live browser extension on Linux as well as Windows.
+    live = _live_browser_tab(app_key, window_title)
+    if live:
+        url = live.get("url") or None
+        tab_title = live.get("title") or None
+        history = live.get("other_domains") or None
 
     if url is None and app_key in _GECKO_SESSIONSTORE_BROWSERS:
         info = _firefox_focus(window_title, app_key)
@@ -2310,7 +2312,15 @@ def get_desktop_state(user_goal=None):
     else:
         active = _active_window_kwin()
         detection_backend = "kwin"
+        if active is None and "gnome" in _desktop_kind():
+            active = gnome_focus()
+            detection_backend = "gnome_dbus"
+        if active is None:
+            active = x11_focus()
+            detection_backend = "x11"
 
+    if active is not None and (active.get("caption") or "").strip().casefold() in _IGNORED_WINDOW_TITLES:
+        active = {"no_active": True}
     if active is not None and active.get("no_active"):
         # On KDE, KWin is the only source of truth: if it says nothing is
         # focused (desktop peek, no focus, or between windows) we report
@@ -2376,6 +2386,12 @@ def get_desktop_state(user_goal=None):
         "desktop_file_id": raw_desktop_file_id,
         "detection_backend": state_source,
         "focus_lost": False,
+        "detection_status": "ok" if raw_app_name else "unavailable",
+        "detection_hint": None if raw_app_name else (
+            "GNOME Wayland: run python3 gnome_extension/install.py and enable Cranky Clippy Focus; "
+            "X11 needs xprop; AT-SPI needs gi/Atspi and app accessibility enabled."
+            if not IS_WINDOWS else "Win32 could not read the foreground identity."
+        ),
         "time_since_window_focused": time_since_window_focused,
         "time_since_last_active": time_since_last_active,
         "activity_time_source": activity_time_source,
@@ -2420,12 +2436,11 @@ def get_desktop_state(user_goal=None):
 
     if cls == "browser":
         md = state["app_metadata"]
-        # The tab title is the freshest signal (it IS the visible tab),
-        # so a title hint outranks the possibly-stale history DB match.
+        # A verified URL outranks title hints, which can name another site.
         hinted = _match_webapp_from_title(md.get("tab_title"))
-        webapp_key = hinted
+        webapp_key = _match_webapp(md.get("site_domain")) if md.get("site_domain") else hinted
         if webapp_key:
-            matched_via = "tab_title"
+            matched_via = "url" if md.get("site_domain") else "tab_title"
         else:
             webapp_key = _match_webapp(md.get("site_domain"))
             matched_via = "url"

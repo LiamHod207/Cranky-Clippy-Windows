@@ -11,8 +11,6 @@ import shutil
 import subprocess
 import json
 import threading
-import urllib.error
-import urllib.request
 
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QWidget, QGraphicsDropShadowEffect
 from PySide6.QtCore import (
@@ -20,15 +18,13 @@ from PySide6.QtCore import (
     QByteArray, QBuffer, QIODevice, QUrl,
 )
 from PySide6.QtGui import QPixmap, QPainter, QPen, QColor, QFontMetrics, QImage, QShortcut, QKeySequence
-from local_secrets import get_secret
+import openrouter_client
 try:
     from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 except ImportError:  # optional audio module; Clippy remains fully usable without it
     QAudioOutput = QMediaPlayer = None
 
 IS_WINDOWS = sys.platform == "win32"
-gemini_api_key = get_secret("GEMINI_API_KEY")
-elevenlabs_api_key = get_secret("ELEVENLABS_API_KEY")
 
 if IS_WINDOWS:
     user32 = ctypes.windll.user32
@@ -93,13 +89,7 @@ MOOD_ANIMATIONS = {
     },
 }
 
-GEMINI_MODEL = "gemini-3.5-flash-lite"
-GEMINI_TIMEOUT_SECONDS = 18
 HAPPY_RESET_MS = 5000
-ELEVENLABS_VOICE_ID = "nPczCjzI2devNBz1zQrb"  # Brian: deep, resonant male voice
-ELEVENLABS_MODEL = "eleven_flash_v2_5"
-ELEVENLABS_SPEED = 1.18
-ELEVENLABS_TIMEOUT_SECONDS = 20
 EXCUSE_ACK_MS = 3500
 EXCUSE_ENTRY_HEIGHT = 38
 EXCUSE_ENTRY_GAP = 8
@@ -108,9 +98,9 @@ FINAL_RETURN_POST_SPEECH_MS = 250
 
 
 def _generate_pet_response(event, context):
-    """Ask Gemini for one short pet line and a valid mood for this transition."""
-    if not gemini_api_key:
-        raise RuntimeError("Gemini API key is missing.")
+    """Ask DeepSeek for one short pet line and a valid mood for this transition."""
+    if not openrouter_client.has_api_key():
+        raise RuntimeError("OpenRouter API key is missing.")
 
     moods = list(MOOD_ANIMATIONS)
     stage_mood = context.get("stage_mood")
@@ -202,61 +192,36 @@ def _generate_pet_response(event, context):
         + "\nContext: " + json.dumps(context, ensure_ascii=False)
     )
     schema = {
-        "type": "OBJECT",
+        "type": "object",
         "properties": {
-            "mood": {"type": "STRING", "enum": moods},
-            "text": {"type": "STRING"},
+            "mood": {"type": "string", "enum": moods},
+            "text": {"type": "string"},
         },
         "required": ["mood", "text"],
     }
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": schema,
-            "temperature": 0.8,
-            "maxOutputTokens": 96,
-        },
-    }
-    request = urllib.request.Request(
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + GEMINI_MODEL + ":generateContent",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": gemini_api_key,
-        },
-        method="POST",
+    schema["additionalProperties"] = False
+    result = openrouter_client.json_completion(
+        prompt, schema, name="clippy_response", temperature=0.8, max_tokens=192,
     )
-    try:
-        with urllib.request.urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
-            data = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError("Gemini API error %d: %s" % (exc.code, detail)) from exc
-
-    candidates = data.get("candidates") or []
-    parts = (candidates[0].get("content", {}).get("parts", []) if candidates else [])
-    response_text = next(
-        (part.get("text", "") for part in parts if part.get("text")), ""
-    )
-    result = json.loads(response_text)
     mood = result.get("mood")
-    text = result.get("text", "").strip()
+    text = result.get("text")
+    if not isinstance(text, str):
+        raise ValueError("DeepSeek returned an invalid pet message.")
+    text = text.strip()
     if mood not in MOOD_ANIMATIONS:
-        raise ValueError("Gemini returned an unknown pet mood.")
+        raise ValueError("DeepSeek returned an unknown pet mood.")
     # Keep the requested escalation/return animation deterministic even if
-    # Gemini's structured response picks a different valid enum value.
+    # DeepSeek's structured response picks a different valid enum value.
     mood = stage_mood if stage_mood in MOOD_ANIMATIONS else mood
     if not text:
-        raise ValueError("Gemini returned an empty pet message.")
+        raise ValueError("DeepSeek returned an empty pet message.")
     return mood, text[:280]
 
 
 def _evaluate_pet_excuse(context, excuse):
     """Conservatively judge whether an excuse makes this app relevant to the goal."""
-    if not gemini_api_key:
-        raise RuntimeError("Gemini API key is missing.")
+    if not openrouter_client.has_api_key():
+        raise RuntimeError("OpenRouter API key is missing.")
 
     prompt = (
         "You are judging one short excuse from a user to a productivity pet. "
@@ -280,49 +245,24 @@ def _evaluate_pet_excuse(context, excuse):
         + "\nUser's excuse: " + json.dumps((excuse or "")[:500], ensure_ascii=False)
     )
     schema = {
-        "type": "OBJECT",
+        "type": "object",
         "properties": {
-            "credible": {"type": "BOOLEAN"},
-            "text": {"type": "STRING"},
+            "credible": {"type": "boolean"},
+            "text": {"type": "string"},
         },
         "required": ["credible", "text"],
     }
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": schema,
-            "temperature": 0.2,
-            "maxOutputTokens": 112,
-        },
-    }
-    request = urllib.request.Request(
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        + GEMINI_MODEL + ":generateContent",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "x-goog-api-key": gemini_api_key,
-        },
-        method="POST",
+    schema["additionalProperties"] = False
+    result = openrouter_client.json_completion(
+        prompt, schema, name="excuse_assessment", temperature=0.2, max_tokens=224,
     )
-    try:
-        with urllib.request.urlopen(request, timeout=GEMINI_TIMEOUT_SECONDS) as response:
-            data = json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:500]
-        raise RuntimeError("Gemini API error %d: %s" % (exc.code, detail)) from exc
-
-    candidates = data.get("candidates") or []
-    parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
-    response_text = next(
-        (part.get("text", "") for part in parts if part.get("text")), ""
-    )
-    result = json.loads(response_text)
     credible = result.get("credible")
-    text = (result.get("text") or "").strip()
+    text = result.get("text")
+    if not isinstance(text, str):
+        raise ValueError("DeepSeek returned an invalid excuse assessment.")
+    text = text.strip()
     if not isinstance(credible, bool) or not text:
-        raise ValueError("Gemini returned an invalid excuse assessment.")
+        raise ValueError("DeepSeek returned an invalid excuse assessment.")
     if len(text) > 280:
         text = text[:277].rsplit(" ", 1)[0] + "..."
     return credible, text
@@ -330,42 +270,11 @@ def _evaluate_pet_excuse(context, excuse):
 
 def _generate_spoken_audio(text):
     """Generate one MP3 utterance; errors are handled as optional TTS failure."""
-    if not elevenlabs_api_key or not text.strip():
-        return b""
-    payload = {
-        "text": text,
-        "model_id": ELEVENLABS_MODEL,
-        "voice_settings": {
-            "stability": 0.55,
-            "similarity_boost": 0.78,
-            "style": 0.2,
-            "use_speaker_boost": True,
-            "speed": ELEVENLABS_SPEED,
-        },
-    }
-    request = urllib.request.Request(
-        "https://api.elevenlabs.io/v1/text-to-speech/%s?output_format=mp3_44100_128"
-        % ELEVENLABS_VOICE_ID,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "xi-api-key": elevenlabs_api_key,
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=ELEVENLABS_TIMEOUT_SECONDS) as response:
-            audio = response.read()
-            if response.status != 200 or not audio:
-                raise RuntimeError("ElevenLabs returned no audio.")
-            return audio
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:300]
-        raise RuntimeError("ElevenLabs API error %d: %s" % (exc.code, detail)) from exc
+    return openrouter_client.spoken_audio(text)
 
 
 class PetControlBridge(QObject):
-    """Passes parent-process commands and background Gemini results to Qt."""
+    """Passes parent-process commands and background DeepSeek results to Qt."""
 
     command_received = Signal(str)
     response_ready = Signal(int, str, str, str)
@@ -720,7 +629,7 @@ class ClippyOverlay(QWidget):
         # Speech is optional. Synthesis/playback failures never affect the
         # mascot's text, animation, or interaction flow.
         self._speech_request_id = 0
-        self._speech_disabled = not bool(elevenlabs_api_key) or QMediaPlayer is None
+        self._speech_disabled = not openrouter_client.has_api_key() or QMediaPlayer is None
         self._speech_error_logged = False
         self._speech_pending = False
         self._speech_playing = False
@@ -865,7 +774,7 @@ class ClippyOverlay(QWidget):
         self._typewriter_timer = QTimer(self)
         self._typewriter_timer.timeout.connect(self._update_typewriter)
         self._displayed_chars = 0
-        self._gemini_request_id = 0
+        self._deepseek_request_id = 0
         self._episode_active = False
         self._last_pet_line = ""
         self._last_pet_event = ""
@@ -1166,7 +1075,7 @@ class ClippyOverlay(QWidget):
             except Exception as exc:
                 self._speech_bridge.ready.emit(request_id, b"", str(exc))
 
-        threading.Thread(target=synthesize, name="clippy-elevenlabs-tts", daemon=True).start()
+        threading.Thread(target=synthesize, name="clippy-kokoro-tts", daemon=True).start()
 
     def _play_spoken_message(self, request_id, audio, error):
         if request_id != self._speech_request_id:
@@ -1178,7 +1087,7 @@ class ClippyOverlay(QWidget):
             self._speech_playing = False
             self._speech_disabled = True
             if error and not self._speech_error_logged:
-                print("[ClippyOverlay] Optional ElevenLabs speech unavailable: %s" % error,
+                print("[ClippyOverlay] Optional Kokoro speech unavailable: %s" % error,
                       file=sys.stderr)
                 self._speech_error_logged = True
             self._maybe_finish_auto_return()
@@ -1400,8 +1309,8 @@ class ClippyOverlay(QWidget):
         if event != "on_task":
             self._persistent_happy = False
 
-        self._gemini_request_id += 1
-        request_id = self._gemini_request_id
+        self._deepseek_request_id += 1
+        request_id = self._deepseek_request_id
         self._happy_reset_timer.stop()
         self._happy_reset_waiting_for_speech = False
         self._final_return_reset_timer.stop()
@@ -1457,13 +1366,13 @@ class ClippyOverlay(QWidget):
 
         threading.Thread(target=request_response, daemon=True).start()
 
-    def _apply_gemini_response(self, request_id, event, mood, text):
-        if request_id != self._gemini_request_id:
+    def _apply_deepseek_response(self, request_id, event, mood, text):
+        if request_id != self._deepseek_request_id:
             return  # Ignore a late reply if the user has changed state again.
         final_return = request_id in self._final_return_request_ids
         self._final_return_request_ids.discard(request_id)
         if not mood:
-            print("[ClippyOverlay] Gemini response failed: %s" % text, file=sys.stderr)
+            print("[ClippyOverlay] DeepSeek response failed: %s" % text, file=sys.stderr)
             if final_return:
                 self._maybe_finish_auto_return()
             return
@@ -1483,7 +1392,7 @@ class ClippyOverlay(QWidget):
 
     def _return_to_idle(self):
         # Invalidate any response that arrived after the automatic return/reset.
-        self._gemini_request_id += 1
+        self._deepseek_request_id += 1
         self._final_return_request_ids.clear()
         self._episode_active = False
         self._auto_returned = False
@@ -1703,7 +1612,7 @@ def main():
         bridge = PetControlBridge()
         overlay._control_bridge = bridge
         bridge.command_received.connect(overlay._handle_control_command)
-        bridge.response_ready.connect(overlay._apply_gemini_response)
+        bridge.response_ready.connect(overlay._apply_deepseek_response)
         bridge.excuse_ready.connect(overlay._apply_excuse_result)
         bridge.start_reading_stdin()
 

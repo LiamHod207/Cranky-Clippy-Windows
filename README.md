@@ -59,21 +59,43 @@ integration to install.
 
 ### GNOME focus detection (especially Wayland)
 
-GNOME does not expose global native Wayland focus through X11. Install and enable
-[Focused Window D-Bus](https://extensions.gnome.org/extension/5592/focused-window-d-bus/)
-using the version offered for your GNOME Shell. Source and interface:
-<https://github.com/flexagoon/focused-window-dbus>. This third-party extension
-exposes focused window identity on your local session bus; other local apps can
-also query it. It is not bundled or installed automatically by Clippy.
+GNOME does not expose global native Wayland focus through X11. This repo bundles
+its own small read-only Shell extension for GNOME 45-50, with no third-party
+download, pip dependency, root privileges or unsafe Shell mode. Install once:
+
+```sh
+python3 gnome_extension/install.py
+```
+
+GNOME may require logging out and back in to discover a newly installed extension.
+If the installer says it could not enable it, after logging in run:
+
+```sh
+gnome-extensions enable focus@cranky-clippy.local
+```
+
+Updates to the running extension also need logout/login. The installer rejects
+unsupported GNOME versions rather than disabling GNOME's version check. This
+extension makes focused app/title identity readable to other apps on the same
+local session bus. It has no network or window-control methods. Disable/remove:
+
+```sh
+gnome-extensions disable focus@cranky-clippy.local
+gnome-extensions uninstall focus@cranky-clippy.local
+```
 
 Check it before launching:
 
 ```sh
 gdbus call --session --dest org.gnome.Shell \
-  --object-path /org/gnome/shell/extensions/FocusedWindow \
-  --method org.gnome.shell.extensions.FocusedWindow.Get
+  --object-path /org/crankyclippy/Focus --method org.crankyclippy.Focus.Get
 python3 get_desktop_state.py
 ```
+
+The detector also accepts an already-installed
+[Focused Window D-Bus](https://extensions.gnome.org/extension/5592/focused-window-d-bus/)
+provider, but that extension is not required. Its interface is documented at
+<https://github.com/flexagoon/focused-window-dbus>.
 
 Do not turn on Shell unsafe mode. Without the extension, AT-SPI is best effort,
 not guaranteed: install the distro accessibility packages, keep system packages

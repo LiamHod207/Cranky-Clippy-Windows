@@ -78,16 +78,13 @@ python -m pip install PySide6
 On Linux the venv needs `--system-site-packages` so the `gi`/AT-SPI modules
 installed by apt stay importable. Windows has no equivalent requirement.
 
-### 3. Set up the API keys
+### 3. Set up one OpenRouter API key
 
-Create or copy an API key from each provider:
+Get one key at <https://openrouter.ai/keys>. Jev decisions, DeepSeek dialogue
+and excuse assessment, and Kokoro speech all use `OPENROUTER_API_KEY`.
+Gemini and ElevenLabs accounts or keys are no longer needed.
 
-- Jev from OpenRouter: <https://openrouter.ai/keys>
-- Gemini: <https://aistudio.google.com/apikey>
-- ElevenLabs: <https://elevenlabs.io/app/settings/api-keys>
-
-Copy `.env.local.example` to `.env.local` and paste each key after its matching
-name (`OPENROUTER_API_KEY`, `GEMINI_API_KEY`, and `ELEVENLABS_API_KEY`):
+Copy `.env.local.example` to `.env.local` and add your key only in the local file:
 
 ```sh
 cp .env.local.example .env.local
@@ -100,7 +97,30 @@ Copy-Item .env.local.example .env.local
 ```
 
 `.env.local` is ignored by Git. Environment variables with the same names take
-precedence over values in that file.
+precedence over values in that file. Never commit API keys or local config.
+Restart the app after changing config.
+
+Defaults (optional config overrides are shown in the example):
+
+- Jev focus decisions: `typesafe/jev-1.13` (existing OpenRouter integration).
+- Dialogue and excuses: `deepseek/deepseek-chat`, using structured JSON responses.
+- Speech: `hexgrad/kokoro-82m`, voice `am_liam` (underscore, not `am-liam`).
+
+Chat uses OpenRouter's `/api/v1/chat/completions`; TTS uses
+`/api/v1/audio/speech` with explicit MP3 output for Qt playback. No extra SDK is
+needed. Speech remains optional: audio failures keep the text overlay working.
+Account credit, model/provider access, network errors, and Qt multimedia support
+can affect availability. Changing models requires matching schema/voice support.
+
+References: [DeepSeek](https://openrouter.ai/deepseek/deepseek-chat),
+[Kokoro](https://openrouter.ai/hexgrad/kokoro-82m),
+[TTS API](https://openrouter.ai/skills/openrouter-tts).
+
+Offline regression tests (no API key or PySide6 needed):
+
+```sh
+python -m unittest discover -s tests -v
+```
 
 ### 4. Install the browser extension (optional, for returning to the exact tab)
 

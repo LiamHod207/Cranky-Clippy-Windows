@@ -1,0 +1,8 @@
+# Secrets and local environments
+.env
+.env.*
+!.env.local.example
+.venv/
+# Generated Python bytecode
+__pycache__/
+*.py[cod]

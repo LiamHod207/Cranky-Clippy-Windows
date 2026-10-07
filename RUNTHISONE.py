@@ -111,13 +111,11 @@ def _browser_executable(app_key):
     return None
 
 
-# The keys this program can use, and where to get them. Only the first is
+# The single key used for decisions, dialogue, and speech. It is
 # required: without it jev_decides.decide() raises, so there is nothing to poll
 # for and every four-second tick would just repaint the same error.
 CREDENTIALS = {
     "OPENROUTER_API_KEY": "https://openrouter.ai/keys",
-    "GEMINI_API_KEY": "https://aistudio.google.com/apikey",
-    "ELEVENLABS_API_KEY": "https://elevenlabs.io/app/settings/api-keys",
 }
 REQUIRED_CREDENTIAL = "OPENROUTER_API_KEY"
 
@@ -904,7 +902,7 @@ class GoalOverlay:
             # An excuse only applies to the exact app/tab/window it justified.
             self._excused_target_signature = None
         if self._excuse_pending and phase != "on_task":
-            # Don't escalate or prompt again while Gemini is judging the typed
+            # Don't escalate or prompt again while DeepSeek is judging the typed
             # explanation; the escalation clock is paused during this check.
             return
 

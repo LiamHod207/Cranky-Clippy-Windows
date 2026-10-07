@@ -15,7 +15,23 @@ def _run(args):
 
 
 def gnome_focus():
-    """Read the Focused Window D-Bus GNOME extension (no unsafe Shell.Eval)."""
+    """Read our bundled Shell extension; accept the optional existing provider."""
+    output = _run([
+        'gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
+        '--object-path', '/org/crankyclippy/Focus',
+        '--method', 'org.crankyclippy.Focus.Get',
+    ])
+    if output is not None:
+        try:
+            payload = json.loads(ast.literal_eval(output.strip())[0])
+            if isinstance(payload, dict):
+                if payload.get('no_active') is True:
+                    return {'no_active': True}
+                if payload.get('app_class'):
+                    return {key: payload.get(key) for key in
+                            ('app_class', 'caption', 'window_id', 'desktop_file_id')}
+        except (ValueError, TypeError, KeyError, IndexError, SyntaxError):
+            pass
     output = _run([
         'gdbus', 'call', '--session', '--dest', 'org.gnome.Shell',
         '--object-path', '/org/gnome/shell/extensions/FocusedWindow',
